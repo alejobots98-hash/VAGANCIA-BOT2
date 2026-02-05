@@ -1,6 +1,16 @@
 const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require("discord.js");
 const fs = require("fs");
+require("dotenv").config();
 
+// 🔐 Token desde Railway (.env)
+const token = process.env.TOKEN;
+
+if (!token) {
+  console.error("❌ TOKEN no encontrado en variables de entorno");
+  process.exit(1);
+}
+
+// 🤖 Cliente Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -9,25 +19,23 @@ const client = new Client({
   ]
 });
 
-require('dotenv').config();
-
-const token = process.env.TOKEN;
-
-
+// 📂 Cargar wins
 let wins = {};
 if (fs.existsSync("./wins.json")) {
   wins = JSON.parse(fs.readFileSync("./wins.json", "utf8"));
 }
 
+// ✅ Bot listo
 client.once("ready", () => {
   console.log(`✅ Bot conectado como ${client.user.tag}`);
 });
 
+// 💬 Comandos
 client.on("messageCreate", message => {
-  if (message.author.bot) return;
+  if (message.author.bot || !message.guild) return;
 
   const args = message.content.split(" ");
-  const command = args[0];
+  const command = args[0].toLowerCase();
 
   const isAdmin = message.member.permissions.has(
     PermissionsBitField.Flags.Administrator
@@ -78,4 +86,6 @@ client.on("messageCreate", message => {
   }
 });
 
-client.login(TOKEN);
+// 🚀 Login
+client.login(token);
+
