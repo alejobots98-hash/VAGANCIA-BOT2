@@ -1,16 +1,6 @@
 const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require("discord.js");
 const fs = require("fs");
-require("dotenv").config();
 
-// 🔐 Token desde Railway (.env)
-const token = process.env.TOKEN;
-
-if (!token) {
-  console.error("❌ TOKEN no encontrado en variables de entorno");
-  process.exit(1);
-}
-
-// 🤖 Cliente Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -19,29 +9,33 @@ const client = new Client({
   ]
 });
 
-// 📂 Cargar wins
+const token = process.env.TOKEN;
+
+// Verificación importante
+if (!token) {
+  console.error("❌ TOKEN no encontrado en Railway");
+  process.exit(1);
+}
+
 let wins = {};
 if (fs.existsSync("./wins.json")) {
   wins = JSON.parse(fs.readFileSync("./wins.json", "utf8"));
 }
 
-// ✅ Bot listo
 client.once("ready", () => {
   console.log(`✅ Bot conectado como ${client.user.tag}`);
 });
 
-// 💬 Comandos
 client.on("messageCreate", message => {
-  if (message.author.bot || !message.guild) return;
+  if (message.author.bot) return;
 
   const args = message.content.split(" ");
-  const command = args[0].toLowerCase();
+  const command = args[0];
 
   const isAdmin = message.member.permissions.has(
     PermissionsBitField.Flags.Administrator
   );
 
-  // 🏆 WIN
   if (command === "!win") {
     if (!isAdmin) return message.reply("⛔ Solo administradores pueden usar este comando.");
 
@@ -55,7 +49,6 @@ client.on("messageCreate", message => {
     message.channel.send(`🏆 **${user.username}** ahora tiene **${wins[user.id]} wins**`);
   }
 
-  // 🔄 RESET
   if (command === "!reset") {
     if (!isAdmin) return message.reply("⛔ Solo administradores pueden usar este comando.");
 
@@ -64,7 +57,6 @@ client.on("messageCreate", message => {
     message.channel.send("♻️ Ranking reseteado correctamente");
   }
 
-  // 📊 RANK
   if (command === "!rank") {
     if (Object.keys(wins).length === 0)
       return message.channel.send("No hay datos aún");
@@ -86,6 +78,6 @@ client.on("messageCreate", message => {
   }
 });
 
-// 🚀 Login
 client.login(token);
+
 
