@@ -86,13 +86,13 @@ client.on("messageCreate", message => {
     const rankingText = sorted
       .slice(0, 10)
       .map((u, i) => {
-        const medal = medals[i] || `**${i + 1}.**`;
-        return `${medal} <@${u[0]}> — **${u[1]} wins**`;
+        const medal = medals[i] || "🏅";
+        return `${medal} <@${u[0]}> • **${u[1]} win${u[1] === 1 ? "" : "s"}**`;
       })
       .join("\n");
 
     const embed = new EmbedBuilder()
-      .setTitle("🏆 TOP 10 — Ranking de Victorias")
+      .setTitle("🏆 TOP 10 — RANKING DE VICTORIAS")
       .setDescription(rankingText)
       .setColor(0xFFD700)
       .setThumbnail(client.user.displayAvatarURL())
