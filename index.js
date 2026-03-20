@@ -18,18 +18,39 @@ if (!token) {
 
 let wins = {};
 
+// ===================== SAVE SEGURO =====================
 function saveWins() {
-  fs.writeFileSync("./wins.json", JSON.stringify(wins, null, 2));
+  try {
+    const tempFile = "./wins_temp.json";
+    fs.writeFileSync(tempFile, JSON.stringify(wins, null, 2));
+    fs.renameSync(tempFile, "./wins.json");
+  } catch (err) {
+    console.error("❌ Error guardando wins:", err);
+  }
 }
 
+// ===================== AUTO SAVE =====================
+setInterval(() => {
+  saveWins();
+  console.log("💾 Auto-guardado de wins");
+}, 30000);
+
+// ===================== LOAD =====================
 if (fs.existsSync("./wins.json")) {
-  wins = JSON.parse(fs.readFileSync("./wins.json", "utf8"));
+  try {
+    wins = JSON.parse(fs.readFileSync("./wins.json", "utf8"));
+  } catch (err) {
+    console.error("❌ Error leyendo wins.json, iniciando vacío");
+    wins = {};
+  }
 }
 
+// ===================== READY =====================
 client.once("ready", () => {
   console.log(`✅ Bot conectado como ${client.user.tag}`);
 });
 
+// ===================== COMANDOS =====================
 client.on("messageCreate", message => {
 
   if (message.author.bot) return;
@@ -41,7 +62,7 @@ client.on("messageCreate", message => {
     PermissionsBitField.Flags.Administrator
   );
 
-  // SUMAR WIN
+  // ===================== SUMAR WIN =====================
   if (command === "!win") {
 
     if (!isAdmin)
@@ -61,7 +82,7 @@ client.on("messageCreate", message => {
     message.channel.send(`🏆 **${user.username}** ahora tiene **${wins[user.id]} wins**`);
   }
 
-  // RESET RANKING
+  // ===================== RESET =====================
   if (command === "!reset") {
 
     if (!isAdmin)
@@ -73,7 +94,7 @@ client.on("messageCreate", message => {
     message.channel.send("♻️ Ranking reseteado correctamente");
   }
 
-  // RANK BONITO
+  // ===================== RANK PRO =====================
   if (command === "!rank") {
 
     if (Object.keys(wins).length === 0)
@@ -87,22 +108,38 @@ client.on("messageCreate", message => {
       .slice(0, 10)
       .map((u, i) => {
         const medal = medals[i] || "🏅";
-        return `${medal} <@${u[0]}> • **${u[1]} win${u[1] === 1 ? "" : "s"}**`;
+        return `${medal} \`#${i + 1}\` <@${u[0]}> • **${u[1]} wins**`;
       })
       .join("\n");
 
+    const topUser = sorted[0];
+
+    const userId = message.author.id;
+    const userData = wins[userId] || 0;
+    const position = sorted.findIndex(u => u[0] === userId) + 1;
+
     const embed = new EmbedBuilder()
-      .setTitle("🏆 TOP 10 — RANKING DE VICTORIAS")
-      .setDescription(rankingText)
       .setColor(0xFFD700)
-      .setThumbnail(client.user.displayAvatarURL())
-      .setFooter({ text: "VG WINS BOT" })
+      .setTitle("🏆・RANKING VAGANCIA")
+      .setDescription(
+        `👑 **TOP 1** ・ <@${topUser[0]}> (**${topUser[1]} wins**)\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `📊 **TOP 10**\n` +
+        `${rankingText}\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🎯 **TU ESTADO**\n` +
+        `${userData > 0 
+          ? `📍 Posición: **#${position}**\n💰 Wins: **${userData}**`
+          : `Aún no estás en el ranking`}`
+      )
+      .setThumbnail("https://cdn-icons-png.flaticon.com/512/2583/2583344.png")
+      .setFooter({ text: "⚔️ Vagancia Ranking System" })
       .setTimestamp();
 
     message.channel.send({ embeds: [embed] });
   }
 
-  // MIS WINS
+  // ===================== MIS WINS =====================
   if (command === "!mywins") {
 
     const userId = message.author.id;
@@ -127,7 +164,7 @@ client.on("messageCreate", message => {
     message.channel.send({ embeds: [embed] });
   }
 
-  // RANKING LISTA
+  // ===================== RANK SIMPLE =====================
   if (command === "!ranked") {
 
     if (Object.keys(wins).length === 0)
