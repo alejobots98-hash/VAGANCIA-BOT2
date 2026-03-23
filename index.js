@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require("discord.js");
-const fs = require("fs");
+const { createClient } = require('@supabase/supabase-js');
 
 const client = new Client({
   intents: [
@@ -9,49 +9,26 @@ const client = new Client({
   ]
 });
 
+// ===================== CONFIGURACIÓN =====================
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 const token = process.env.TOKEN;
 
-if (!token) {
-  console.error("❌ TOKEN no encontrado en Railway");
+if (!supabaseUrl || !supabaseKey || !token) {
+  console.error("❌ Faltan variables de entorno (TOKEN, SUPABASE_URL o SUPABASE_KEY)");
   process.exit(1);
 }
 
-let wins = {};
-
-// ===================== SAVE SEGURO =====================
-function saveWins() {
-  try {
-    const tempFile = "./wins_temp.json";
-    fs.writeFileSync(tempFile, JSON.stringify(wins, null, 2));
-    fs.renameSync(tempFile, "./wins.json");
-  } catch (err) {
-    console.error("❌ Error guardando wins:", err);
-  }
-}
-
-// ===================== AUTO SAVE =====================
-setInterval(() => {
-  saveWins();
-  console.log("💾 Auto-guardado de wins");
-}, 30000);
-
-// ===================== LOAD =====================
-if (fs.existsSync("./wins.json")) {
-  try {
-    wins = JSON.parse(fs.readFileSync("./wins.json", "utf8"));
-  } catch (err) {
-    console.error("❌ Error leyendo wins.json, iniciando vacío");
-    wins = {};
-  }
-}
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ===================== READY =====================
 client.once("ready", () => {
   console.log(`✅ Bot conectado como ${client.user.tag}`);
+  console.log(`🔌 Base de datos Supabase conectada`);
 });
 
 // ===================== COMANDOS =====================
-client.on("messageCreate", message => {
+client.on("messageCreate", async message => {
 
   if (message.author.bot) return;
 
@@ -62,78 +39,96 @@ client.on("messageCreate", message => {
     PermissionsBitField.Flags.Administrator
   );
 
-  // ===================== SUMAR WIN =====================
+  // ===================== SUMAR WIN (SUPABASE) =====================
   if (command === "!win") {
-
-    if (!isAdmin)
-      return message.reply("⛔ Solo administradores pueden usar este comando.");
+    if (!isAdmin) return message.reply("⛔ Solo administradores.");
 
     const user = message.mentions.users.first();
+    if (!user) return message.reply("❌ Usá: !win @usuario");
 
-    if (!user)
-      return message.reply("❌ Usá: !win @usuario");
+    try {
+      // 1. Buscamos al usuario o lo creamos
+      const { data, error } = await supabase
+        .from('registros-usuarios')
+        .upsert({ discord_id: user.id }, { onConflict: 'discord_id' })
+        .select();
 
-    if (!wins[user.id]) wins[user.id] = 0;
+      if (error) throw error;
 
-    wins[user.id]++;
+      // 2. Sumamos la victoria
+      const currentWins = data[0].wins || 0;
+      const { error: updateError } = await supabase
+        .from('registros-usuarios')
+        .update({ wins: currentWins + 1 })
+        .eq('discord_id', user.id);
 
-    saveWins();
+      if (updateError) throw updateError;
 
-    message.channel.send(`🏆 **${user.username}** ahora tiene **${wins[user.id]} wins**`);
+      message.channel.send(`🏆 **${user.username}** ahora tiene **${currentWins + 1} wins**`);
+    } catch (e) {
+      console.error(e);
+      message.reply("❌ Error al guardar en la base de datos.");
+    }
   }
 
-  // ===================== RESET =====================
+  // ===================== RESET (SUPABASE) =====================
   if (command === "!reset") {
+    if (!isAdmin) return message.reply("⛔ Solo administradores.");
 
-    if (!isAdmin)
-      return message.reply("⛔ Solo administradores pueden usar este comando.");
+    const { error } = await supabase
+      .from('registros-usuarios')
+      .update({ wins: 0 })
+      .neq('wins', -1); 
 
-    wins = {};
-    saveWins();
-
-    message.channel.send("♻️ Ranking reseteado correctamente");
+    if (error) return message.reply("❌ Error al resetear.");
+    message.channel.send("♻️ Ranking reseteado correctamente.");
   }
 
-  // ===================== RANK PRO =====================
+  // ===================== RANK PRO (SUPABASE) =====================
   if (command === "!rank") {
+    const { data: users, error } = await supabase
+      .from('registros-usuarios')
+      .select('*')
+      .order('wins', { ascending: false })
+      .limit(10);
 
-    if (Object.keys(wins).length === 0)
+    if (error || !users || users.length === 0) 
       return message.channel.send("📊 Aún no hay victorias registradas.");
 
-    const sorted = Object.entries(wins).sort((a, b) => b[1] - a[1]);
-
     const medals = ["🥇", "🥈", "🥉"];
-
-    const rankingText = sorted
-      .slice(0, 10)
+    const rankingText = users
       .map((u, i) => {
         const medal = medals[i] || "🏅";
-        return `${medal} \`#${i + 1}\` <@${u[0]}> • **${u[1]} wins**`;
+        return `${medal} \`#${i + 1}\` <@${u.discord_id}> • **${u.wins} wins**`;
       })
       .join("\n");
 
-    const topUser = sorted[0];
+    const topUser = users[0];
 
-    const userId = message.author.id;
-    const userData = wins[userId] || 0;
-    const position = sorted.findIndex(u => u[0] === userId) + 1;
+    const { data: allUsers } = await supabase
+      .from('registros-usuarios')
+      .select('discord_id, wins')
+      .order('wins', { ascending: false });
+
+    const position = allUsers.findIndex(u => u.discord_id === message.author.id) + 1;
+    const userData = allUsers.find(u => u.discord_id === message.author.id);
 
     const embed = new EmbedBuilder()
       .setColor(0xFFD700)
       .setTitle("🏆・RANKING VAGANCIA")
       .setDescription(
-        `👑 **TOP 1** ・ <@${topUser[0]}> (**${topUser[1]} wins**)\n` +
+        `👑 **TOP 1** ・ <@${topUser.discord_id}> (**${topUser.wins} wins**)\n` +
         `━━━━━━━━━━━━━━━━━━\n\n` +
         `📊 **TOP 10**\n` +
         `${rankingText}\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `🎯 **TU ESTADO**\n` +
-        `${userData > 0 
-          ? `📍 Posición: **#${position}**\n💰 Wins: **${userData}**`
+        `${userData && userData.wins > 0 
+          ? `📍 Posición: **#${position}**\n💰 Wins: **${userData.wins}**`
           : `Aún no estás en el ranking`}`
       )
       .setThumbnail("https://cdn-icons-png.flaticon.com/512/2583/2583344.png")
-      .setFooter({ text: "⚔️ Vagancia Ranking System" })
+      .setFooter({ text: "⚔️ Vagancia Nube System" })
       .setTimestamp();
 
     message.channel.send({ embeds: [embed] });
@@ -141,51 +136,16 @@ client.on("messageCreate", message => {
 
   // ===================== MIS WINS =====================
   if (command === "!mywins") {
+    const { data, error } = await supabase
+      .from('registros-usuarios')
+      .select('wins')
+      .eq('discord_id', message.author.id)
+      .single();
 
-    const userId = message.author.id;
+    if (error || !data) return message.reply("📊 Aún no tenés victorias.");
 
-    if (!wins[userId])
-      return message.reply("📊 Aún no tenés victorias registradas.");
-
-    const sorted = Object.entries(wins).sort((a, b) => b[1] - a[1]);
-
-    const position = sorted.findIndex(u => u[0] === userId) + 1;
-
-    const embed = new EmbedBuilder()
-      .setTitle("📊 Tus estadísticas")
-      .addFields(
-        { name: "Jugador", value: `<@${userId}>`, inline: true },
-        { name: "Wins", value: `${wins[userId]}`, inline: true },
-        { name: "Posición", value: `#${position}`, inline: true }
-      )
-      .setColor(0x00AEFF)
-      .setTimestamp();
-
-    message.channel.send({ embeds: [embed] });
+    message.reply(`Tenés un total de **${data.wins} victorias**.`);
   }
-
-  // ===================== RANK SIMPLE =====================
-  if (command === "!ranked") {
-
-    if (Object.keys(wins).length === 0)
-      return message.channel.send("📊 No hay datos aún.");
-
-    const sorted = Object.entries(wins).sort((a, b) => b[1] - a[1]);
-
-    const rankingText = sorted
-      .slice(0, 10)
-      .map((u, i) => `**${i + 1}.** <@${u[0]}> — ${u[1]} wins`)
-      .join("\n");
-
-    const embed = new EmbedBuilder()
-      .setTitle("📊 Ranking de Jugadores")
-      .setDescription(rankingText)
-      .setColor(0x00AEFF)
-      .setTimestamp();
-
-    message.channel.send({ embeds: [embed] });
-  }
-
 });
 
 client.login(token);
