@@ -14,8 +14,8 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const token = process.env.TOKEN;
 
-// Rol que puede usar !win
-const allowedRoleId = "1509135957167702036";
+// Rol que también puede usar !win
+const allowedRoleId = "1476541425263968391";
 
 if (!supabaseUrl || !supabaseKey || !token) {
   console.error("❌ Faltan variables de entorno (TOKEN, SUPABASE_URL o SUPABASE_KEY)");
@@ -34,6 +34,7 @@ client.once("ready", () => {
 client.on("messageCreate", async message => {
 
   if (message.author.bot) return;
+  if (!message.guild) return;
 
   const args = message.content.split(" ");
   const command = args[0].toLowerCase();
@@ -47,7 +48,7 @@ client.on("messageCreate", async message => {
 
   const canUseWin = isAdmin || hasWinRole;
 
-  // ===================== SUMAR WIN (SUPABASE) =====================
+  // ===================== SUMAR WIN =====================
   if (command === "!win") {
 
     if (!canUseWin) {
@@ -114,13 +115,14 @@ client.on("messageCreate", async message => {
       .neq("wins", -1);
 
     if (error) {
+      console.error(error);
       return message.reply("❌ Error al resetear.");
     }
 
     message.channel.send("♻️ Ranking reseteado correctamente.");
   }
 
-  // ===================== TOP RANK =====================
+  // ===================== RANKING =====================
   if (command === "!rank") {
 
     const { data: users, error } = await supabase
