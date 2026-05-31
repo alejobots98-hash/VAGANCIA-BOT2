@@ -14,9 +14,6 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const token = process.env.TOKEN;
 
-// Rol que también puede usar !win
-const allowedRoleId = "1476541425263968391";
-
 if (!supabaseUrl || !supabaseKey || !token) {
   console.error("❌ Faltan variables de entorno (TOKEN, SUPABASE_URL o SUPABASE_KEY)");
   process.exit(1);
@@ -44,15 +41,11 @@ client.on("messageCreate", async message => {
     PermissionsBitField.Flags.Administrator
   );
 
-  const hasWinRole = message.member.roles.cache.has(allowedRoleId);
-
-  const canUseWin = isAdmin || hasWinRole;
-
   // ===================== SUMAR WIN =====================
   if (command === "!win") {
 
-    if (!canUseWin) {
-      return message.reply("⛔ No tenés permisos para usar este comando.");
+    if (!isAdmin) {
+      return message.reply("⛔ Solo administradores pueden sumar wins.");
     }
 
     const user = message.mentions.users.first();
