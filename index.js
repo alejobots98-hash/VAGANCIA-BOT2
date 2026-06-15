@@ -115,7 +115,7 @@ client.on("messageCreate", async message => {
     message.channel.send("♻️ Ranking reseteado correctamente.");
   }
 
-  // ===================== RANKING =====================
+  // ===================== RANKING GENERAL =====================
   if (command === "!rank") {
 
     const { data: users, error } = await supabase
@@ -181,7 +181,7 @@ client.on("messageCreate", async message => {
   if (command === "!mywins") {
 
     try {
-      // Traemos toda la lista para calcular la posición real en el top global
+      // Obtenemos todos los registros ordenados para calcular el Top Global en tiempo real
       const { data: allUsers, error: dbError } = await supabase
         .from("registros-usuarios")
         .select("discord_id, wins")
@@ -192,15 +192,14 @@ client.on("messageCreate", async message => {
       const userData = allUsers.find(u => u.discord_id === message.author.id);
       const userWins = userData ? userData.wins : 0;
       
-      // Buscamos la posición. Si no tiene wins, quedará al final de la lista.
       const position = allUsers.findIndex(u => u.discord_id === message.author.id) + 1;
       const globalRank = userWins > 0 ? `#${position}` : "Sin rank";
 
-      // Cargamos el logo local de la carpeta
+      // Buscamos el logo local adjunto en la carpeta raíz del proyecto
       const file = new AttachmentBuilder("./logo.png");
 
       const profileEmbed = new EmbedBuilder()
-        .setColor(0xFF007F) // Un color rosa vivo similar al de tu referencia
+        .setColor(0xFF007F)
         .setAuthor({ 
           name: message.author.username, 
           iconURL: message.author.displayAvatarURL({ dynamic: true }) 
@@ -214,7 +213,6 @@ client.on("messageCreate", async message => {
           `😈 **Seguís subiendo en el ranking !**\n\n` +
           `───────────────────`
         )
-        // Esto sitúa el archivo logo.png arriba a la derecha (Thumbnail)
         .setThumbnail("attachment://logo.png") 
         .setFooter({
           text: "❤️ Vagancia Rank system"
