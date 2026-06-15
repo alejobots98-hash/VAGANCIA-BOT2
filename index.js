@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, AttachmentBuilder } = require("discord.js");
 const { createClient } = require("@supabase/supabase-js");
 
 const client = new Client({
@@ -177,22 +177,59 @@ client.on("messageCreate", async message => {
     });
   }
 
-  // ===================== MIS WINS =====================
+  // ===================== NUEVO PERFIL (REEMPLAZO !MYWINS) =====================
   if (command === "!mywins") {
 
-    const { data, error } = await supabase
-      .from("registros-usuarios")
-      .select("wins")
-      .eq("discord_id", message.author.id)
-      .single();
+    try {
+      // Traemos toda la lista para calcular la posición real en el top global
+      const { data: allUsers, error: dbError } = await supabase
+        .from("registros-usuarios")
+        .select("discord_id, wins")
+        .order("wins", { ascending: false });
 
-    if (error || !data) {
-      return message.reply("📊 Aún no tenés victorias.");
+      if (dbError) throw dbError;
+
+      const userData = allUsers.find(u => u.discord_id === message.author.id);
+      const userWins = userData ? userData.wins : 0;
+      
+      // Buscamos la posición. Si no tiene wins, quedará al final de la lista.
+      const position = allUsers.findIndex(u => u.discord_id === message.author.id) + 1;
+      const globalRank = userWins > 0 ? `#${position}` : "Sin rank";
+
+      // Cargamos el logo local de la carpeta
+      const file = new AttachmentBuilder("./logo.png");
+
+      const profileEmbed = new EmbedBuilder()
+        .setColor(0xFF007F) // Un color rosa vivo similar al de tu referencia
+        .setAuthor({ 
+          name: message.author.username, 
+          iconURL: message.author.displayAvatarURL({ dynamic: true }) 
+        })
+        .setDescription(
+          `<:dox_rank:1347311895836754122> **· DOX RANK**\n\n` +
+          `<:usuario:1411828606312906772> **USUARIO:** <@${message.author.id}>\n\n` +
+          `<:top_global:1493178367728685136> **TOP GLOBAL:** ${globalRank}\n\n` +
+          `<:wins:1464185802928951348> **WINS:** ${userWins}\n\n` +
+          `───────────────────\n\n` +
+          `😈 **Seguís subiendo en el ranking !**\n\n` +
+          `───────────────────`
+        )
+        // Esto sitúa el archivo logo.png arriba a la derecha (Thumbnail)
+        .setThumbnail("attachment://logo.png") 
+        .setFooter({
+          text: "❤️ Vagancia Rank system"
+        })
+        .setTimestamp();
+
+      message.reply({
+        embeds: [profileEmbed],
+        files: [file]
+      });
+
+    } catch (e) {
+      console.error(e);
+      message.reply("❌ Ocurrió un error al cargar tu perfil.");
     }
-
-    message.reply(
-      `🏆 Tenés un total de **${data.wins} victorias**.`
-    );
   }
 });
 
