@@ -208,7 +208,7 @@ client.on("messageCreate", async message => {
           `<:dox_rank:1347311895836754122> **· VAGANCIA RANK**\n\n` +
           `<:usuario:1411828606312906772> **USUARIO:** <@${message.author.id}>\n\n` +
           `<:top_global:1493178367728685136> **TOP GLOBAL:** ${globalRank}\n\n` +
-          `<:wins_nuevo:1374847805553639496> **WINS:** ${userWins}\n\n` +
+          `<:wins:1452217653350502462> **WINS:** ${userWins}\n\n` +
           `───────────────────\n\n` +
           `😈 **Seguís subiendo en el ranking !**\n\n` +
           `───────────────────`
