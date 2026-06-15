@@ -198,6 +198,9 @@ client.on("messageCreate", async message => {
       // Buscamos el logo local adjunto en la carpeta raíz del proyecto
       const file = new AttachmentBuilder("./logo.png");
 
+      // Obtenemos la URL de la foto de perfil del usuario en un tamaño grande y nítido (size: 1024)
+      const userAvatarURL = message.author.displayAvatarURL({ dynamic: true, size: 1024 });
+
       const profileEmbed = new EmbedBuilder()
         .setColor(0xFF007F)
         .setAuthor({ 
@@ -213,7 +216,8 @@ client.on("messageCreate", async message => {
           `😈 **Seguís subiendo en el ranking !**\n\n` +
           `───────────────────`
         )
-        .setThumbnail("attachment://logo.png") 
+        .setThumbnail("attachment://logo.png") // El logo local se queda arriba a la derecha
+        .setImage(userAvatarURL) // La foto de perfil del usuario se muestra abajo en grande
         .setFooter({
           text: "❤️ Vagancia Rank system"
         })
