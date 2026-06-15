@@ -205,10 +205,10 @@ client.on("messageCreate", async message => {
           iconURL: message.author.displayAvatarURL({ dynamic: true }) 
         })
         .setDescription(
-          `<:dox_rank:1347311895836754122> **· DOX RANK**\n\n` +
+          `<:dox_rank:1347311895836754122> **· VAGANCIA RANK**\n\n` +
           `<:usuario:1411828606312906772> **USUARIO:** <@${message.author.id}>\n\n` +
           `<:top_global:1493178367728685136> **TOP GLOBAL:** ${globalRank}\n\n` +
-          `<:wins:1464185802928951348> **WINS:** ${userWins}\n\n` +
+          `<:wins_nuevo:1374847805553639496> **WINS:** ${userWins}\n\n` +
           `───────────────────\n\n` +
           `😈 **Seguís subiendo en el ranking !**\n\n` +
           `───────────────────`
