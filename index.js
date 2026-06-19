@@ -24,7 +24,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // ===================== READY =====================
 client.once("ready", () => {
   console.log(`✅ Bot conectado como ${client.user.tag}`);
-  console.log(`🔌 Base de datos Supabase conectada`);
+  console.log("🔌 Base de datos Supabase conectada");
 });
 
 // ===================== COMANDOS =====================
@@ -51,45 +51,100 @@ client.on("messageCreate", async message => {
     const user = message.mentions.users.first();
 
     if (!user) {
-      return message.reply("❌ Usá: !win @usuario");
+      return message.reply("❌ Usá: !win @usuario [cantidad]");
+    }
+
+    // Si no se especifica cantidad, por defecto suma 1
+    let amount = parseInt(args[2]) || 1;
+
+    if (isNaN(amount) || amount < 1 || amount > 10) {
+      return message.reply("❌ La cantidad de wins debe ser un número entre 1 y 10.");
     }
 
     try {
-
-      // Buscar o crear usuario
-      const { data, error } = await supabase
+      // Aseguramos que el usuario exista en la tabla
+      await supabase
         .from("registros-usuarios")
-        .upsert(
-          {
-            discord_id: user.id
-          },
-          {
-            onConflict: "discord_id"
-          }
-        )
-        .select();
+        .upsert({ discord_id: user.id }, { onConflict: "discord_id" });
+
+      // Sumamos de forma segura mediante RPC
+      const { error } = await supabase
+        .rpc("increment_wins", { row_id: user.id, num: amount });
 
       if (error) throw error;
 
-      const currentWins = data[0].wins || 0;
-
-      // Actualizar wins
-      const { error: updateError } = await supabase
+      // Buscamos el nuevo total para mostrarlo
+      const { data: userData } = await supabase
         .from("registros-usuarios")
-        .update({
-          wins: currentWins + 1
-        })
-        .eq("discord_id", user.id);
-
-      if (updateError) throw updateError;
+        .select("wins")
+        .eq("discord_id", user.id)
+        .single();
 
       message.channel.send(
-        `🏆 **${user.username}** ahora tiene **${currentWins + 1} wins**`
+        `🏆 **${user.username}** recibió **+${amount} wins**. Total actual: **${userData?.wins || 0} wins**`
       );
 
     } catch (e) {
       console.error(e);
       message.reply("❌ Error al guardar en la base de datos.");
+    }
+  }
+
+  // ===================== RESTAR WIN =====================
+  if (command === "!rwin") {
+
+    if (!isAdmin) {
+      return message.reply("⛔ Solo administradores pueden restar wins.");
+    }
+
+    const user = message.mentions.users.first();
+
+    if (!user) {
+      return message.reply("❌ Usá: !rwin @usuario [cantidad]");
+    }
+
+    // Si no se especifica cantidad, por defecto resta 1
+    let amount = parseInt(args[2]) || 1;
+
+    if (isNaN(amount) || amount < 1 || amount > 10) {
+      return message.reply("❌ La cantidad a restar debe ser un número entre 1 y 10.");
+    }
+
+    try {
+      // Verificamos si el usuario existe para no restar en el vacío
+      const { data: userData, error: fetchError } = await supabase
+        .from("registros-usuarios")
+        .select("wins")
+        .eq("discord_id", user.id)
+        .single();
+
+      if (fetchError || !userData) {
+        return message.reply("❌ El usuario no tiene un registro activo en el ranking.");
+      }
+
+      // Evitamos que queden wins en negativo
+      let finalAmount = amount;
+      if (userData.wins - amount < 0) {
+        finalAmount = userData.wins; 
+      }
+
+      if (finalAmount === 0) {
+        return message.reply(`⚠ **${user.username}** ya tiene 0 wins.`);
+      }
+
+      // Restamos pasando el número en negativo al RPC
+      const { error } = await supabase
+        .rpc("increment_wins", { row_id: user.id, num: -finalAmount });
+
+      if (error) throw error;
+
+      message.channel.send(
+        `📉 **${user.username}** perdió **-${finalAmount} wins**. Total actual: **${userData.wins - finalAmount} wins**`
+      );
+
+    } catch (e) {
+      console.error(e);
+      message.reply("❌ Error al procesar la solicitud en la base de datos.");
     }
   }
 
@@ -102,9 +157,7 @@ client.on("messageCreate", async message => {
 
     const { error } = await supabase
       .from("registros-usuarios")
-      .update({
-        wins: 0
-      })
+      .update({ wins: 0 })
       .neq("wins", -1);
 
     if (error) {
@@ -133,8 +186,7 @@ client.on("messageCreate", async message => {
     const rankingText = users
       .map((u, i) => {
         const medal = medals[i] || "🏅";
-
-        return `${medal} \`#${i + 1}\` <@${u.discord_id}> • **${u.wins} wins**`;
+        return `${medal} #${i + 1} <@${u.discord_id}> • **${u.wins} wins**`;
       })
       .join("\n");
 
@@ -145,11 +197,8 @@ client.on("messageCreate", async message => {
       .select("discord_id, wins")
       .order("wins", { ascending: false });
 
-    const position =
-      allUsers.findIndex(u => u.discord_id === message.author.id) + 1;
-
-    const userData =
-      allUsers.find(u => u.discord_id === message.author.id);
+    const position = allUsers.findIndex(u => u.discord_id === message.author.id) + 1;
+    const userData = allUsers.find(u => u.discord_id === message.author.id);
 
     const embed = new EmbedBuilder()
       .setColor(0xFFD700)
@@ -161,27 +210,19 @@ client.on("messageCreate", async message => {
         `${rankingText}\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `🎯 **TU ESTADO**\n` +
-        `${userData && userData.wins > 0
-          ? `📍 Posición: **#${position}**\n💰 Wins: **${userData.wins}**`
-          : `Aún no estás en el ranking`
-        }`
+        `${userData && userData.wins > 0 ? `📍 Posición: **#${position}**\n💰 Wins: **${userData.wins}**` : "Aún no estás en el ranking"}`
       )
       .setThumbnail("https://cdn-icons-png.flaticon.com/512/2583/2583344.png")
-      .setFooter({
-        text: "⚔️ Vagancia Nube System"
-      })
+      .setFooter({ text: "⚔️ Vagancia Nube System" })
       .setTimestamp();
 
-    message.channel.send({
-      embeds: [embed]
-    });
+    message.channel.send({ embeds: [embed] });
   }
 
-  // ===================== NUEVO PERFIL (REEMPLAZO !MYWINS) =====================
+  // ===================== NUEVO PERFIL =====================
   if (command === "!mywins") {
 
     try {
-      // Obtenemos todos los registros ordenados para calcular el Top Global en tiempo real
       const { data: allUsers, error: dbError } = await supabase
         .from("registros-usuarios")
         .select("discord_id, wins")
@@ -195,10 +236,7 @@ client.on("messageCreate", async message => {
       const position = allUsers.findIndex(u => u.discord_id === message.author.id) + 1;
       const globalRank = userWins > 0 ? `#${position}` : "Sin rank";
 
-      // Buscamos el logo local adjunto en la carpeta raíz del proyecto
       const file = new AttachmentBuilder("./logo.png");
-
-      // Obtenemos la URL de la foto de perfil del usuario en un tamaño grande y nítido (size: 1024)
       const userAvatarURL = message.author.displayAvatarURL({ dynamic: true, size: 1024 });
 
       const profileEmbed = new EmbedBuilder()
@@ -216,11 +254,9 @@ client.on("messageCreate", async message => {
           `😈 **Seguís subiendo en el ranking !**\n\n` +
           `───────────────────`
         )
-        .setThumbnail("attachment://logo.png") // El logo local se queda arriba a la derecha
-        .setImage(userAvatarURL) // La foto de perfil del usuario se muestra abajo en grande
-        .setFooter({
-          text: "❤️ Vagancia Rank system"
-        })
+        .setThumbnail("attachment://logo.png")
+        .setImage(userAvatarURL)
+        .setFooter({ text: "❤️ Vagancia Rank system" })
         .setTimestamp();
 
       message.reply({
