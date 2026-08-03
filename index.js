@@ -14,6 +14,9 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const token = process.env.TOKEN;
 
+// ID del rol "inter apos"
+const INTER_APOS_ROLE_ID = "1476541425263968391";
+
 if (!supabaseUrl || !supabaseKey || !token) {
   console.error("❌ Faltan variables de entorno (TOKEN, SUPABASE_URL o SUPABASE_KEY)");
   process.exit(1);
@@ -37,15 +40,16 @@ client.on("messageCreate", async message => {
   const command = args[0].toLowerCase();
 
   // ===================== PERMISOS =====================
-  const isAdmin = message.member.permissions.has(
-    PermissionsBitField.Flags.Administrator
-  );
+  // Es Admin O tiene el rol Inter Apos
+  const hasPermission = 
+    message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+    message.member.roles.cache.has(INTER_APOS_ROLE_ID);
 
   // ===================== SUMAR WIN =====================
   if (command === "!win") {
 
-    if (!isAdmin) {
-      return message.reply("⛔ Solo administradores pueden sumar wins.");
+    if (!hasPermission) {
+      return message.reply("⛔ No tenés permisos para usar este comando.");
     }
 
     const user = message.mentions.users.first();
@@ -93,8 +97,8 @@ client.on("messageCreate", async message => {
   // ===================== RESTAR WIN =====================
   if (command === "!rwin") {
 
-    if (!isAdmin) {
-      return message.reply("⛔ Solo administradores pueden restar wins.");
+    if (!hasPermission) {
+      return message.reply("⛔ No tenés permisos para usar este comando.");
     }
 
     const user = message.mentions.users.first();
@@ -151,8 +155,8 @@ client.on("messageCreate", async message => {
   // ===================== RESET RANKING =====================
   if (command === "!reset") {
 
-    if (!isAdmin) {
-      return message.reply("⛔ Solo administradores.");
+    if (!hasPermission) {
+      return message.reply("⛔ No tenés permisos para usar este comando.");
     }
 
     const { error } = await supabase
