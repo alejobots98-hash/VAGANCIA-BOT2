@@ -14,8 +14,9 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const token = process.env.TOKEN;
 
-// ID del rol "inter apos"
+// IDs de roles autorizados
 const INTER_APOS_ROLE_ID = "1476541425263968391";
+const RULETA_ROLE_ID = "1558984699609612318";
 
 if (!supabaseUrl || !supabaseKey || !token) {
   console.error("❌ Faltan variables de entorno (TOKEN, SUPABASE_URL o SUPABASE_KEY)");
@@ -40,44 +41,38 @@ client.on("messageCreate", async message => {
   const command = args[0].toLowerCase();
 
   // ===================== PERMISOS =====================
-  // Es Admin O tiene el rol Inter Apos
+  // Es Admin O tiene el rol Inter Apos O tiene el rol de Ruleta
   const hasPermission = 
     message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-    message.member.roles.cache.has(INTER_APOS_ROLE_ID);
+    message.member.roles.cache.has(INTER_APOS_ROLE_ID) ||
+    message.member.roles.cache.has(RULETA_ROLE_ID);
 
   // ===================== SUMAR WIN (GENERAL) =====================
   if (command === "!win") {
-
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
     }
 
     const user = message.mentions.users.first();
-
     if (!user) {
       return message.reply("❌ Usá: !win @usuario [cantidad]");
     }
 
-    // Si no se especifica cantidad, por defecto suma 1
     let amount = parseInt(args[2]) || 1;
-
     if (isNaN(amount) || amount < 1 || amount > 10) {
       return message.reply("❌ La cantidad de wins debe ser un número entre 1 y 10.");
     }
 
     try {
-      // Aseguramos que el usuario exista en la tabla
       await supabase
         .from("registros-usuarios")
         .upsert({ discord_id: user.id }, { onConflict: "discord_id" });
 
-      // Sumamos de forma segura mediante RPC
       const { error } = await supabase
         .rpc("increment_wins", { row_id: user.id, num: amount });
 
       if (error) throw error;
 
-      // Buscamos el nuevo total para mostrarlo
       const { data: userData } = await supabase
         .from("registros-usuarios")
         .select("wins")
@@ -87,7 +82,6 @@ client.on("messageCreate", async message => {
       message.channel.send(
         `🏆 **${user.username}** recibió **+${amount} wins**. Total actual: **${userData?.wins || 0} wins**`
       );
-
     } catch (e) {
       console.error(e);
       message.reply("❌ Error al guardar en la base de datos.");
@@ -96,26 +90,21 @@ client.on("messageCreate", async message => {
 
   // ===================== RESTAR WIN (GENERAL) =====================
   if (command === "!rwin") {
-
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
     }
 
     const user = message.mentions.users.first();
-
     if (!user) {
       return message.reply("❌ Usá: !rwin @usuario [cantidad]");
     }
 
-    // Si no se especifica cantidad, por defecto resta 1
     let amount = parseInt(args[2]) || 1;
-
     if (isNaN(amount) || amount < 1 || amount > 10) {
       return message.reply("❌ La cantidad a restar debe ser un número entre 1 y 10.");
     }
 
     try {
-      // Verificamos si el usuario existe para no restar en el vacío
       const { data: userData, error: fetchError } = await supabase
         .from("registros-usuarios")
         .select("wins")
@@ -126,7 +115,6 @@ client.on("messageCreate", async message => {
         return message.reply("❌ El usuario no tiene un registro activo en el ranking.");
       }
 
-      // Evitamos que queden wins en negativo
       let finalAmount = amount;
       if (userData.wins - amount < 0) {
         finalAmount = userData.wins; 
@@ -136,7 +124,6 @@ client.on("messageCreate", async message => {
         return message.reply(`⚠ **${user.username}** ya tiene 0 wins.`);
       }
 
-      // Restamos pasando el número en negativo al RPC
       const { error } = await supabase
         .rpc("increment_wins", { row_id: user.id, num: -finalAmount });
 
@@ -145,7 +132,6 @@ client.on("messageCreate", async message => {
       message.channel.send(
         `📉 **${user.username}** perdió **-${finalAmount} wins**. Total actual: **${userData.wins - finalAmount} wins**`
       );
-
     } catch (e) {
       console.error(e);
       message.reply("❌ Error al procesar la solicitud en la base de datos.");
@@ -154,19 +140,16 @@ client.on("messageCreate", async message => {
 
   // ===================== SUMAR WIN (FEMENINO) =====================
   if (command === "!fwin") {
-
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
     }
 
     const user = message.mentions.users.first();
-
     if (!user) {
       return message.reply("❌ Usá: !fwin @usuario [cantidad]");
     }
 
     let amount = parseInt(args[2]) || 1;
-
     if (isNaN(amount) || amount < 1 || amount > 10) {
       return message.reply("❌ La cantidad de wins debe ser un número entre 1 y 10.");
     }
@@ -190,7 +173,6 @@ client.on("messageCreate", async message => {
       message.channel.send(
         `👑 **${user.username}** recibió **+${amount} wins** (Femenino). Total actual: **${userData?.wins_femeninas || 0} wins**`
       );
-
     } catch (e) {
       console.error(e);
       message.reply("❌ Error al guardar en la base de datos.");
@@ -199,19 +181,16 @@ client.on("messageCreate", async message => {
 
   // ===================== RESTAR WIN (FEMENINO) =====================
   if (command === "!rfwin") {
-
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
     }
 
     const user = message.mentions.users.first();
-
     if (!user) {
       return message.reply("❌ Usá: !rfwin @usuario [cantidad]");
     }
 
     let amount = parseInt(args[2]) || 1;
-
     if (isNaN(amount) || amount < 1 || amount > 10) {
       return message.reply("❌ La cantidad a restar debe ser un número entre 1 y 10.");
     }
@@ -245,7 +224,98 @@ client.on("messageCreate", async message => {
       message.channel.send(
         `📉 **${user.username}** perdió **-${finalAmount} wins** (Femenino). Total actual: **${currentWins - finalAmount} wins**`
       );
+    } catch (e) {
+      console.error(e);
+      message.reply("❌ Error al procesar la solicitud en la base de datos.");
+    }
+  }
 
+  // ===================== SUMAR WIN (RULETA) =====================
+  if (command === "!rulawin") {
+    if (!hasPermission) {
+      return message.reply("⛔ No tenés permisos para usar este comando.");
+    }
+
+    const user = message.mentions.users.first();
+    if (!user) {
+      return message.reply("❌ Usá: !rulawin @usuario [cantidad]");
+    }
+
+    let amount = parseInt(args[2]) || 1;
+    if (isNaN(amount) || amount < 1 || amount > 10) {
+      return message.reply("❌ La cantidad de wins debe ser un número entre 1 y 10.");
+    }
+
+    try {
+      await supabase
+        .from("registros-usuarios")
+        .upsert({ discord_id: user.id }, { onConflict: "discord_id" });
+
+      const { error } = await supabase
+        .rpc("increment_rulawins", { row_id: user.id, num: amount });
+
+      if (error) throw error;
+
+      const { data: userData } = await supabase
+        .from("registros-usuarios")
+        .select("rulawins")
+        .eq("discord_id", user.id)
+        .single();
+
+      message.channel.send(
+        `🎰 **${user.username}** ganó **+${amount} victoria(s) en Ruleta**! Total actual: **${userData?.rulawins || 0} rula-wins** 🎯`
+      );
+    } catch (e) {
+      console.error(e);
+      message.reply("❌ Error al guardar en la base de datos.");
+    }
+  }
+
+  // ===================== RESTAR WIN (RULETA) =====================
+  if (command === "!quitwin") {
+    if (!hasPermission) {
+      return message.reply("⛔ No tenés permisos para usar este comando.");
+    }
+
+    const user = message.mentions.users.first();
+    if (!user) {
+      return message.reply("❌ Usá: !quitwin @usuario [cantidad]");
+    }
+
+    let amount = parseInt(args[2]) || 1;
+    if (isNaN(amount) || amount < 1 || amount > 10) {
+      return message.reply("❌ La cantidad a restar debe ser un número entre 1 y 10.");
+    }
+
+    try {
+      const { data: userData, error: fetchError } = await supabase
+        .from("registros-usuarios")
+        .select("rulawins")
+        .eq("discord_id", user.id)
+        .single();
+
+      if (fetchError || !userData) {
+        return message.reply("❌ El usuario no tiene un registro activo en el ranking de ruleta.");
+      }
+
+      let currentWins = userData.rulawins || 0;
+      let finalAmount = amount;
+      if (currentWins - amount < 0) {
+        finalAmount = currentWins; 
+      }
+
+      if (finalAmount === 0) {
+        return message.reply(`⚠ **${user.username}** ya tiene 0 victorias en ruleta.`);
+      }
+
+      const { error } = await supabase
+        .rpc("increment_rulawins", { row_id: user.id, num: -finalAmount });
+
+      if (error) throw error;
+
+      message.channel.send(
+        `📉 **${user.username}** perdió **-${finalAmount} victoria(s) en Ruleta**. Total actual: **${currentWins - finalAmount} rula-wins**`
+      );
     } catch (e) {
       console.error(e);
       message.reply("❌ Error al procesar la solicitud en la base de datos.");
@@ -254,14 +324,13 @@ client.on("messageCreate", async message => {
 
   // ===================== RESET RANKING =====================
   if (command === "!reset") {
-
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
     }
 
     const { error } = await supabase
       .from("registros-usuarios")
-      .update({ wins: 0, wins_femeninas: 0 })
+      .update({ wins: 0, wins_femeninas: 0, rulawins: 0 })
       .neq("wins", -1);
 
     if (error) {
@@ -269,12 +338,11 @@ client.on("messageCreate", async message => {
       return message.reply("❌ Error al resetear.");
     }
 
-    message.channel.send("♻️ Rankings reseteados correctamente.");
+    message.channel.send("♻️ Rankings reseteados correctamente (General, Femenino y Ruleta).");
   }
 
   // ===================== RANKING GENERAL =====================
   if (command === "!rank") {
-
     const { data: users, error } = await supabase
       .from("registros-usuarios")
       .select("*")
@@ -325,7 +393,6 @@ client.on("messageCreate", async message => {
 
   // ===================== RANKING FEMENINO =====================
   if (command === "!frank") {
-
     const { data: users, error } = await supabase
       .from("registros-usuarios")
       .select("*")
@@ -378,9 +445,62 @@ client.on("messageCreate", async message => {
     message.channel.send({ embeds: [embed], files: [file] });
   }
 
+  // ===================== RANKING RULETA =====================
+  if (command === "!rularank") {
+    const { data: users, error } = await supabase
+      .from("registros-usuarios")
+      .select("*")
+      .gt("rulawins", 0)
+      .order("rulawins", { ascending: false })
+      .limit(10);
+
+    if (error || !users || users.length === 0) {
+      return message.channel.send("🎰 Aún no hay victorias registradas en el ranking de ruleta.");
+    }
+
+    const medals = ["🥇", "🥈", "🥉"];
+
+    const rankingText = users
+      .map((u, i) => {
+        const medal = medals[i] || "🏅";
+        return `${medal} #${i + 1} <@${u.discord_id}> • **${u.rulawins} rula-wins**`;
+      })
+      .join("\n");
+
+    const topUser = users[0];
+
+    const { data: allUsers } = await supabase
+      .from("registros-usuarios")
+      .select("discord_id, rulawins")
+      .gt("rulawins", 0)
+      .order("rulawins", { ascending: false });
+
+    const position = allUsers ? allUsers.findIndex(u => u.discord_id === message.author.id) + 1 : 0;
+    const userData = allUsers ? allUsers.find(u => u.discord_id === message.author.id) : null;
+
+    const embed = new EmbedBuilder()
+      .setColor(0x9B59B6)
+      .setTitle("🎰・RANKING RULETA APOSTADOS")
+      .setDescription(
+        `👑 **REY DE LA RULETA** ・ <@${topUser.discord_id}> (**${topUser.rulawins} rula-wins**)\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `🎲 **TOP 10 RULETEROS**\n` +
+        `${rankingText}\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🎯 **TU ESTADO**\n` +
+        `${userData && userData.rulawins > 0 ? `📍 Posición: **#${position}**\n🎲 Victorias: **${userData.rulawins}**` : "Aún no figurás en el ranking de ruleta"}`
+      )
+      .setThumbnail("attachment://ruletero.png")
+      .setFooter({ text: "🎲 Vagancia Roulette System" })
+      .setTimestamp();
+
+    const file = new AttachmentBuilder("./ruletero.png");
+
+    message.channel.send({ embeds: [embed], files: [file] });
+  }
+
   // ===================== MI PERFIL GENERAL =====================
   if (command === "!mywins") {
-
     try {
       const { data: allUsers, error: dbError } = await supabase
         .from("registros-usuarios")
@@ -431,7 +551,6 @@ client.on("messageCreate", async message => {
 
   // ===================== MI PERFIL FEMENINO =====================
   if (command === "!fmywins") {
-
     try {
       const { data: allUsers, error: dbError } = await supabase
         .from("registros-usuarios")
@@ -478,6 +597,57 @@ client.on("messageCreate", async message => {
     } catch (e) {
       console.error(e);
       message.reply("❌ Ocurrió un error al cargar tu perfil.");
+    }
+  }
+
+  // ===================== MI PERFIL RULETA =====================
+  if (command === "!myrula") {
+    try {
+      const { data: allUsers, error: dbError } = await supabase
+        .from("registros-usuarios")
+        .select("discord_id, rulawins")
+        .gt("rulawins", 0)
+        .order("rulawins", { ascending: false });
+
+      if (dbError) throw dbError;
+
+      const userData = allUsers ? allUsers.find(u => u.discord_id === message.author.id) : null;
+      const userRulaWins = userData ? userData.rulawins : 0;
+      
+      const position = allUsers ? allUsers.findIndex(u => u.discord_id === message.author.id) + 1 : 0;
+      const globalRank = userRulaWins > 0 ? `#${position}` : "Sin rank";
+
+      const file = new AttachmentBuilder("./ruletero.png");
+      const userAvatarURL = message.author.displayAvatarURL({ dynamic: true, size: 1024 });
+
+      const profileEmbed = new EmbedBuilder()
+        .setColor(0x8E44AD)
+        .setAuthor({ 
+          name: message.author.username, 
+          iconURL: message.author.displayAvatarURL({ dynamic: true }) 
+        })
+        .setDescription(
+          `🎰 **· PERFIL RULETA APOSTADOS** 🎰\n\n` +
+          `👤 **USUARIO:** <@${message.author.id}>\n\n` +
+          `🏆 **TOP RULETA:** ${globalRank}\n\n` +
+          `🎲 **RULA WINS:** ${userRulaWins}\n\n` +
+          `───────────────────\n\n` +
+          `🔥 **¡Que la suerte siga de tu lado!**\n\n` +
+          `───────────────────`
+        )
+        .setThumbnail("attachment://ruletero.png")
+        .setImage(userAvatarURL)
+        .setFooter({ text: "🎲 Vagancia Roulette System" })
+        .setTimestamp();
+
+      message.reply({
+        embeds: [profileEmbed],
+        files: [file]
+      });
+
+    } catch (e) {
+      console.error(e);
+      message.reply("❌ Ocurrió un error al cargar tu perfil de ruleta.");
     }
   }
 });
