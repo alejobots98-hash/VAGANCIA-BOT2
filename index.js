@@ -5,7 +5,8 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -24,6 +25,14 @@ if (!supabaseUrl || !supabaseKey || !token) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// ===================== FUNCIÓN AUXILIAR PERFIL =====================
+async function obtenerDatosUsuario(guild, user) {
+  const member = guild.members.cache.get(user.id) || await guild.members.fetch(user.id).catch(() => null);
+  const displayName = member ? member.displayName : user.username;
+  const avatarURL = user.displayAvatarURL({ extension: "png", size: 256 });
+  return { displayName, avatarURL };
+}
 
 // ===================== READY =====================
 client.once("ready", () => {
@@ -63,17 +72,20 @@ client.on("messageCreate", async message => {
     }
 
     try {
+      const { displayName, avatarURL } = await obtenerDatosUsuario(message.guild, user);
+
       await supabase
         .from("registros-usuarios")
-        .upsert({ discord_id: user.id }, { onConflict: "discord_id" });
+        .upsert({ 
+          discord_id: user.id,
+          nombre: displayName,
+          avatar_url: avatarURL
+        }, { onConflict: "discord_id" });
 
       const { error } = await supabase
         .rpc("increment_wins", { row_id: user.id, num: amount });
 
       if (error) throw error;
-
-      const member = message.guild.members.cache.get(user.id);
-      const displayName = member ? member.displayName : user.username;
 
       const { data: dailyWins, error: dailyError } = await supabase
         .rpc("registrar_vitorias", {
@@ -92,7 +104,7 @@ client.on("messageCreate", async message => {
         .single();
 
       message.channel.send(
-        `🏆 **${user.username}** recibió **+${amount} wins**. Total global: **${userData?.wins || 0}** | Hoy: **${dailyWins}**`
+        `🏆 **${displayName}** recibió **+${amount} wins**. Total global: **${userData?.wins || 0}** | Hoy: **${dailyWins}**`
       );
     } catch (e) {
       console.error(e);
@@ -136,6 +148,13 @@ client.on("messageCreate", async message => {
         return message.reply(`⚠ **${user.username}** ya tiene 0 wins.`);
       }
 
+      const { displayName, avatarURL } = await obtenerDatosUsuario(message.guild, user);
+
+      await supabase
+        .from("registros-usuarios")
+        .update({ nombre: displayName, avatar_url: avatarURL })
+        .eq("discord_id", user.id);
+
       const { error } = await supabase
         .rpc("increment_wins", { row_id: user.id, num: -finalAmount });
 
@@ -143,13 +162,13 @@ client.on("messageCreate", async message => {
 
       await supabase.rpc("registrar_vitorias", {
         p_discord_id: user.id,
-        p_nome: user.username,
+        p_nome: displayName,
         p_num: -finalAmount,
         p_partida_id: null
       });
 
       message.channel.send(
-        `📉 **${user.username}** perdió **-${finalAmount} wins**. Total actual: **${userData.wins - finalAmount} wins**`
+        `📉 **${displayName}** perdió **-${finalAmount} wins**. Total actual: **${userData.wins - finalAmount} wins**`
       );
     } catch (e) {
       console.error(e);
@@ -174,9 +193,15 @@ client.on("messageCreate", async message => {
     }
 
     try {
+      const { displayName, avatarURL } = await obtenerDatosUsuario(message.guild, user);
+
       await supabase
         .from("registros-usuarios")
-        .upsert({ discord_id: user.id }, { onConflict: "discord_id" });
+        .upsert({ 
+          discord_id: user.id,
+          nombre: displayName,
+          avatar_url: avatarURL
+        }, { onConflict: "discord_id" });
 
       const { error } = await supabase
         .rpc("increment_wins_femeninas", { row_id: user.id, num: amount });
@@ -190,7 +215,7 @@ client.on("messageCreate", async message => {
         .single();
 
       message.channel.send(
-        `👑 **${user.username}** recibió **+${amount} wins** (Femenino). Total actual: **${userData?.wins_femeninas || 0} wins**`
+        `👑 **${displayName}** recibió **+${amount} wins** (Femenino). Total actual: **${userData?.wins_femeninas || 0} wins**`
       );
     } catch (e) {
       console.error(e);
@@ -266,9 +291,15 @@ client.on("messageCreate", async message => {
     }
 
     try {
+      const { displayName, avatarURL } = await obtenerDatosUsuario(message.guild, user);
+
       await supabase
         .from("registros-usuarios")
-        .upsert({ discord_id: user.id }, { onConflict: "discord_id" });
+        .upsert({ 
+          discord_id: user.id,
+          nombre: displayName,
+          avatar_url: avatarURL
+        }, { onConflict: "discord_id" });
 
       const { error } = await supabase
         .rpc("increment_rulawins", { row_id: user.id, num: amount });
@@ -282,7 +313,7 @@ client.on("messageCreate", async message => {
         .single();
 
       message.channel.send(
-        `🎰 **${user.username}** ganó **+${amount} victoria(s) en Ruleta**! Total actual: **${userData?.rulawins || 0} rula-wins** 🎯`
+        `🎰 **${displayName}** ganó **+${amount} victoria(s) en Ruleta**! Total actual: **${userData?.rulawins || 0} rula-wins** 🎯`
       );
     } catch (e) {
       console.error(e);
