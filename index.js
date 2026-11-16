@@ -41,13 +41,12 @@ client.on("messageCreate", async message => {
   const command = args[0].toLowerCase();
 
   // ===================== PERMISOS =====================
-  // Es Admin O tiene el rol Inter Apos O tiene el rol de Ruleta
   const hasPermission = 
     message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
     message.member.roles.cache.has(INTER_APOS_ROLE_ID) ||
     message.member.roles.cache.has(RULETA_ROLE_ID);
 
-  // ===================== SUMAR WIN (GENERAL) =====================
+  // ===================== SUMAR WIN (GENERAL + DIARIA) =====================
   if (command === "!win") {
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
@@ -73,6 +72,15 @@ client.on("messageCreate", async message => {
 
       if (error) throw error;
 
+      const { data: dailyWins, error: dailyError } = await supabase
+        .rpc("increment_daily_wins", { 
+          p_discord_id: user.id, 
+          p_username: user.username, 
+          p_num: amount 
+        });
+
+      if (dailyError) throw dailyError;
+
       const { data: userData } = await supabase
         .from("registros-usuarios")
         .select("wins")
@@ -80,7 +88,7 @@ client.on("messageCreate", async message => {
         .single();
 
       message.channel.send(
-        `🏆 **${user.username}** recibió **+${amount} wins**. Total actual: **${userData?.wins || 0} wins**`
+        `🏆 **${user.username}** recibió **+${amount} wins**. Total global: **${userData?.wins || 0}** | Hoy: **${dailyWins}**`
       );
     } catch (e) {
       console.error(e);
@@ -88,7 +96,7 @@ client.on("messageCreate", async message => {
     }
   }
 
-  // ===================== RESTAR WIN (GENERAL) =====================
+  // ===================== RESTAR WIN (GENERAL + DIARIA) =====================
   if (command === "!rwin") {
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
@@ -128,6 +136,12 @@ client.on("messageCreate", async message => {
         .rpc("increment_wins", { row_id: user.id, num: -finalAmount });
 
       if (error) throw error;
+
+      await supabase.rpc("increment_daily_wins", { 
+        p_discord_id: user.id, 
+        p_username: user.username, 
+        p_num: -finalAmount 
+      });
 
       message.channel.send(
         `📉 **${user.username}** perdió **-${finalAmount} wins**. Total actual: **${userData.wins - finalAmount} wins**`
@@ -386,6 +400,61 @@ client.on("messageCreate", async message => {
       )
       .setThumbnail("https://cdn-icons-png.flaticon.com/512/2583/2583344.png")
       .setFooter({ text: "⚔️ Vagancia Nube System" })
+      .setTimestamp();
+
+    message.channel.send({ embeds: [embed] });
+  }
+
+  // ===================== RANKING DIARIO =====================
+  if (command === "!rankdiario") {
+    const hoyArg = new Date().toLocaleDateString("en-CA", {
+      timeZone: "America/Argentina/Buenos_Aires"
+    });
+
+    const { data: allToday, error } = await supabase
+      .from("ranking_diario_apostados")
+      .select("discord_id, wins")
+      .eq("fecha", hoyArg)
+      .gt("wins", 0)
+      .order("wins", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      return message.reply("❌ Error al consultar el ranking diario.");
+    }
+
+    if (!allToday || allToday.length === 0) {
+      return message.channel.send("📅 Aún no hay victorias registradas en el día de hoy.");
+    }
+
+    const top10 = allToday.slice(0, 10);
+    const medals = ["🥇", "🥈", "🥉"];
+
+    const rankingText = top10
+      .map((u, i) => {
+        const medal = medals[i] || "🏅";
+        return `${medal} #${i + 1} <@${u.discord_id}> • **${u.wins} wins**`;
+      })
+      .join("\n");
+
+    const topUser = top10[0];
+    const position = allToday.findIndex(u => u.discord_id === message.author.id) + 1;
+    const userData = allToday.find(u => u.discord_id === message.author.id);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x9B59B6)
+      .setTitle(`📅・RANKING DIARIO VAGANCIA (${hoyArg.split("-").reverse().join("/")})`)
+      .setDescription(
+        `👑 **LÍDER DEL DÍA** ・ <@${topUser.discord_id}> (**${topUser.wins} wins**)\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `📊 **TOP 10 DE HOY**\n` +
+        `${rankingText}\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🎯 **TU ESTADO HOY**\n` +
+        `${userData && userData.wins > 0 ? `📍 Posición: **#${position}**\n💰 Wins hoy: **${userData.wins}**` : "Aún no sumaste wins hoy"}`
+      )
+      .setThumbnail("https://cdn-icons-png.flaticon.com/512/2583/2583344.png")
+      .setFooter({ text: "⚔️ Vagancia Nube System • Se reinicia a las 00:00 AR" })
       .setTimestamp();
 
     message.channel.send({ embeds: [embed] });
