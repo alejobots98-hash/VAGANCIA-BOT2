@@ -46,7 +46,7 @@ client.on("messageCreate", async message => {
     message.member.roles.cache.has(INTER_APOS_ROLE_ID) ||
     message.member.roles.cache.has(RULETA_ROLE_ID);
 
-  // ===================== SUMAR WIN (GENERAL + DIARIA) =====================
+  // ===================== SUMAR WIN (GENERAL + VITORIAS) =====================
   if (command === "!win") {
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
@@ -72,11 +72,15 @@ client.on("messageCreate", async message => {
 
       if (error) throw error;
 
+      const member = message.guild.members.cache.get(user.id);
+      const displayName = member ? member.displayName : user.username;
+
       const { data: dailyWins, error: dailyError } = await supabase
-        .rpc("increment_daily_wins", { 
-          p_discord_id: user.id, 
-          p_username: user.username, 
-          p_num: amount 
+        .rpc("registrar_vitorias", {
+          p_discord_id: user.id,
+          p_nome: displayName,
+          p_num: amount,
+          p_partida_id: null
         });
 
       if (dailyError) throw dailyError;
@@ -96,7 +100,7 @@ client.on("messageCreate", async message => {
     }
   }
 
-  // ===================== RESTAR WIN (GENERAL + DIARIA) =====================
+  // ===================== RESTAR WIN (GENERAL + VITORIAS) =====================
   if (command === "!rwin") {
     if (!hasPermission) {
       return message.reply("⛔ No tenés permisos para usar este comando.");
@@ -125,7 +129,7 @@ client.on("messageCreate", async message => {
 
       let finalAmount = amount;
       if (userData.wins - amount < 0) {
-        finalAmount = userData.wins; 
+        finalAmount = userData.wins;
       }
 
       if (finalAmount === 0) {
@@ -137,10 +141,11 @@ client.on("messageCreate", async message => {
 
       if (error) throw error;
 
-      await supabase.rpc("increment_daily_wins", { 
-        p_discord_id: user.id, 
-        p_username: user.username, 
-        p_num: -finalAmount 
+      await supabase.rpc("registrar_vitorias", {
+        p_discord_id: user.id,
+        p_nome: user.username,
+        p_num: -finalAmount,
+        p_partida_id: null
       });
 
       message.channel.send(
@@ -223,7 +228,7 @@ client.on("messageCreate", async message => {
       let currentWins = userData.wins_femeninas || 0;
       let finalAmount = amount;
       if (currentWins - amount < 0) {
-        finalAmount = currentWins; 
+        finalAmount = currentWins;
       }
 
       if (finalAmount === 0) {
@@ -315,7 +320,7 @@ client.on("messageCreate", async message => {
       let currentWins = userData.rulawins || 0;
       let finalAmount = amount;
       if (currentWins - amount < 0) {
-        finalAmount = currentWins; 
+        finalAmount = currentWins;
       }
 
       if (finalAmount === 0) {
@@ -405,27 +410,35 @@ client.on("messageCreate", async message => {
     message.channel.send({ embeds: [embed] });
   }
 
-  // ===================== RANKING DIARIO =====================
+  // ===================== RANKING DIARIO (TABLA VITORIAS) =====================
   if (command === "!rankdiario") {
     const hoyArg = new Date().toLocaleDateString("en-CA", {
       timeZone: "America/Argentina/Buenos_Aires"
     });
+    const inicioDiaArg = `${hoyArg}T00:00:00-03:00`;
 
-    const { data: allToday, error } = await supabase
-      .from("ranking_diario_apostados")
-      .select("discord_id, wins")
-      .eq("fecha", hoyArg)
-      .gt("wins", 0)
-      .order("wins", { ascending: false });
+    const { data: rows, error } = await supabase
+      .from("vitorias")
+      .select("discord_id")
+      .gte("ganho_em", inicioDiaArg);
 
     if (error) {
       console.error(error);
       return message.reply("❌ Error al consultar el ranking diario.");
     }
 
-    if (!allToday || allToday.length === 0) {
+    if (!rows || rows.length === 0) {
       return message.channel.send("📅 Aún no hay victorias registradas en el día de hoy.");
     }
+
+    const counts = {};
+    for (const r of rows) {
+      counts[r.discord_id] = (counts[r.discord_id] || 0) + 1;
+    }
+
+    const allToday = Object.entries(counts)
+      .map(([discord_id, wins]) => ({ discord_id, wins }))
+      .sort((a, b) => b.wins - a.wins);
 
     const top10 = allToday.slice(0, 10);
     const medals = ["🥇", "🥈", "🥉"];
