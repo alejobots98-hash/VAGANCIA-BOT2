@@ -28,21 +28,70 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ===================== FUNCIÓN AUXILIAR PERFIL =====================
 async function obtenerDatosUsuario(guild, user) {
-  const member = guild.members.cache.get(user.id) || await guild.members.fetch(user.id).catch(() => null);
+  const member = guild
+    ? guild.members.cache.get(user.id) || await guild.members.fetch(user.id).catch(() => null)
+    : null;
   const displayName = member ? member.displayName : user.username;
   const avatarURL = user.displayAvatarURL({ extension: "png", size: 256 });
   return { displayName, avatarURL };
 }
 
+// ===================== SINCRONIZAR NOMBRES Y AVATARES EXISTENTES =====================
+async function sincronizarPerfilesDB() {
+  try {
+    const guild = client.guilds.cache.first();
+
+    // 1. Obtener todos los discord_id únicos de ambas tablas
+    const { data: regUsers } = await supabase.from("registros-usuarios").select("discord_id");
+    const { data: vitUsers } = await supabase.from("vitorias").select("discord_id");
+
+    const idsUnicos = new Set([
+      ...(regUsers || []).map(u => u.discord_id),
+      ...(vitUsers || []).map(u => u.discord_id)
+    ]);
+
+    let actualizados = 0;
+
+    for (const discordId of idsUnicos) {
+      if (!discordId) continue;
+
+      const user = await client.users.fetch(discordId).catch(() => null);
+      if (!user) continue;
+
+      const { displayName, avatarURL } = await obtenerDatosUsuario(guild, user);
+
+      // Actualizar en registros-usuarios
+      await supabase
+        .from("registros-usuarios")
+        .update({ nombre: displayName, avatar_url: avatarURL })
+        .eq("discord_id", discordId);
+
+      // Actualizar en vitorias (asigna nome y avatar_url a todos los registros de ese ID)
+      await supabase
+        .from("vitorias")
+        .update({ nome: displayName, avatar_url: avatarURL })
+        .eq("discord_id", discordId);
+
+      actualizados++;
+    }
+
+    console.log(`🔄 Sincronización completada: ${actualizados} perfiles actualizados con nombre y avatar.`);
+    return actualizados;
+  } catch (err) {
+    console.error("❌ Error sincronizando perfiles:", err);
+    return 0;
+  }
+}
+
 // ===================== READY =====================
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`✅ Bot conectado como ${client.user.tag}`);
   console.log("🔌 Base de datos Supabase conectada");
+  await sincronizarPerfilesDB();
 });
 
 // ===================== COMANDOS =====================
 client.on("messageCreate", async message => {
-
   if (message.author.bot) return;
   if (!message.guild) return;
 
@@ -50,10 +99,20 @@ client.on("messageCreate", async message => {
   const command = args[0].toLowerCase();
 
   // ===================== PERMISOS =====================
-  const hasPermission = 
+  const hasPermission =
     message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
     message.member.roles.cache.has(INTER_APOS_ROLE_ID) ||
     message.member.roles.cache.has(RULETA_ROLE_ID);
+
+  // ===================== SINCRONIZAR PERFILES MANUAL =====================
+  if (command === "!syncperfiles") {
+    if (!hasPermission) {
+      return message.reply("⛔ No tenés permisos para usar este comando.");
+    }
+    const msg = await message.reply("⏳ Sincronizando nombres y avatares de todos los IDs en Supabase...");
+    const total = await sincronizarPerfilesDB();
+    return msg.edit(`✅ Listo. Se actualizaron **${total}** perfiles en \`registros-usuarios\` y \`vitorias\`.`);
+  }
 
   // ===================== SUMAR WIN (GENERAL + VITORIAS) =====================
   if (command === "!win") {
@@ -76,7 +135,7 @@ client.on("messageCreate", async message => {
 
       await supabase
         .from("registros-usuarios")
-        .upsert({ 
+        .upsert({
           discord_id: user.id,
           nombre: displayName,
           avatar_url: avatarURL
@@ -96,6 +155,13 @@ client.on("messageCreate", async message => {
         });
 
       if (dailyError) throw dailyError;
+
+      // Asegura que avatar_url y nome queden guardados en vitorias
+      await supabase
+        .from("vitorias")
+        .update({ nome: displayName, avatar_url: avatarURL })
+        .eq("discord_id", user.id)
+        .is("avatar_url", null);
 
       const { data: userData } = await supabase
         .from("registros-usuarios")
@@ -197,7 +263,7 @@ client.on("messageCreate", async message => {
 
       await supabase
         .from("registros-usuarios")
-        .upsert({ 
+        .upsert({
           discord_id: user.id,
           nombre: displayName,
           avatar_url: avatarURL
@@ -295,7 +361,7 @@ client.on("messageCreate", async message => {
 
       await supabase
         .from("registros-usuarios")
-        .upsert({ 
+        .upsert({
           discord_id: user.id,
           nombre: displayName,
           avatar_url: avatarURL
@@ -624,7 +690,7 @@ client.on("messageCreate", async message => {
 
       const userData = allUsers.find(u => u.discord_id === message.author.id);
       const userWins = userData ? userData.wins : 0;
-      
+
       const position = allUsers.findIndex(u => u.discord_id === message.author.id) + 1;
       const globalRank = userWins > 0 ? `#${position}` : "Sin rank";
 
@@ -633,9 +699,9 @@ client.on("messageCreate", async message => {
 
       const profileEmbed = new EmbedBuilder()
         .setColor(0xFF007F)
-        .setAuthor({ 
-          name: message.author.username, 
-          iconURL: message.author.displayAvatarURL({ dynamic: true }) 
+        .setAuthor({
+          name: message.author.username,
+          iconURL: message.author.displayAvatarURL({ dynamic: true })
         })
         .setDescription(
           `<:dox_rank:1347311895836754122> **· VAGANCIA RANK**\n\n` +
@@ -675,7 +741,7 @@ client.on("messageCreate", async message => {
 
       const userData = allUsers ? allUsers.find(u => u.discord_id === message.author.id) : null;
       const userWins = userData ? userData.wins_femeninas : 0;
-      
+
       const position = allUsers ? allUsers.findIndex(u => u.discord_id === message.author.id) + 1 : 0;
       const globalRank = userWins > 0 ? `#${position}` : "Sin rank";
 
@@ -684,9 +750,9 @@ client.on("messageCreate", async message => {
 
       const profileEmbed = new EmbedBuilder()
         .setColor(0xFF007F)
-        .setAuthor({ 
-          name: message.author.username, 
-          iconURL: message.author.displayAvatarURL({ dynamic: true }) 
+        .setAuthor({
+          name: message.author.username,
+          iconURL: message.author.displayAvatarURL({ dynamic: true })
         })
         .setDescription(
           `<:1326235112920186951:1540650992104898590> **· VAGANCIA RANK FEMENINO**\n\n` +
@@ -726,7 +792,7 @@ client.on("messageCreate", async message => {
 
       const userData = allUsers ? allUsers.find(u => u.discord_id === message.author.id) : null;
       const userRulaWins = userData ? userData.rulawins : 0;
-      
+
       const position = allUsers ? allUsers.findIndex(u => u.discord_id === message.author.id) + 1 : 0;
       const globalRank = userRulaWins > 0 ? `#${position}` : "Sin rank";
 
@@ -735,9 +801,9 @@ client.on("messageCreate", async message => {
 
       const profileEmbed = new EmbedBuilder()
         .setColor(0x8E44AD)
-        .setAuthor({ 
-          name: message.author.username, 
-          iconURL: message.author.displayAvatarURL({ dynamic: true }) 
+        .setAuthor({
+          name: message.author.username,
+          iconURL: message.author.displayAvatarURL({ dynamic: true })
         })
         .setDescription(
           `🎰 **· PERFIL RULETA APOSTADOS** 🎰\n\n` +
