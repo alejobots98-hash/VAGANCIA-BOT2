@@ -15,6 +15,9 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const token = process.env.TOKEN;
 
+// Link de la página web con los rankings (se puede sobrescribir con la variable de entorno WEB_URL)
+const WEB_URL = process.env.WEB_URL || "https://lavagancia.squareweb.app/#rankings";
+
 // IDs de roles autorizados
 const INTER_APOS_ROLE_ID = "1476541425263968391";
 const RULETA_ROLE_ID = "1558984699609612318";
@@ -34,6 +37,12 @@ async function obtenerDatosUsuario(guild, user) {
   const displayName = member ? member.displayName : user.username;
   const avatarURL = user.displayAvatarURL({ extension: "png", size: 256 });
   return { displayName, avatarURL };
+}
+
+// ===================== FUNCIÓN AUXILIAR WINRATE =====================
+function calcWinrate(wins, derrotas) {
+  const total = (wins || 0) + (derrotas || 0);
+  return total > 0 ? Math.round(((wins || 0) / total) * 1000) / 10 : 0;
 }
 
 // ===================== SINCRONIZAR NOMBRES Y AVATARES EXISTENTES =====================
@@ -146,6 +155,9 @@ client.on("messageCreate", async message => {
 
       if (error) throw error;
 
+      // Suma la racha (y actualiza la mejor racha)
+      await supabase.rpc("registrar_win_racha", { row_id: user.id, num: amount });
+
       const { data: dailyWins, error: dailyError } = await supabase
         .rpc("registrar_vitorias", {
           p_discord_id: user.id,
@@ -171,6 +183,54 @@ client.on("messageCreate", async message => {
 
       message.channel.send(
         `🏆 **${displayName}** recibió **+${amount} wins**. Total global: **${userData?.wins || 0}** | Hoy: **${dailyWins}**`
+      );
+    } catch (e) {
+      console.error(e);
+      message.reply("❌ Error al guardar en la base de datos.");
+    }
+  }
+
+  // ===================== SUMAR DERROTA =====================
+  if (command === "!lose") {
+    if (!hasPermission) {
+      return message.reply("⛔ No tenés permisos para usar este comando.");
+    }
+
+    const user = message.mentions.users.first();
+    if (!user) {
+      return message.reply("❌ Usá: !lose @usuario [cantidad]");
+    }
+
+    const amount = parseInt(args[2]) || 1;
+    if (isNaN(amount) || amount < 1 || amount > 10) {
+      return message.reply("❌ La cantidad debe ser un número entre 1 y 10.");
+    }
+
+    try {
+      const { displayName, avatarURL } = await obtenerDatosUsuario(message.guild, user);
+
+      await supabase
+        .from("registros-usuarios")
+        .upsert({
+          discord_id: user.id,
+          nombre: displayName,
+          avatar_url: avatarURL
+        }, { onConflict: "discord_id" });
+
+      const { error } = await supabase
+        .rpc("increment_derrotas", { row_id: user.id, num: amount });
+
+      if (error) throw error;
+
+      const { data: d } = await supabase
+        .from("registros-usuarios")
+        .select("wins, derrotas, racha")
+        .eq("discord_id", user.id)
+        .single();
+
+      message.channel.send(
+        `💀 **${displayName}** sumó **+${amount} derrota(s)**. ` +
+        `W/L: **${d?.wins || 0}/${d?.derrotas || 0}** | Winrate: **${calcWinrate(d?.wins, d?.derrotas)}%** | Racha: **${d?.racha || 0}**`
       );
     } catch (e) {
       console.error(e);
@@ -446,7 +506,7 @@ client.on("messageCreate", async message => {
 
     const { error } = await supabase
       .from("registros-usuarios")
-      .update({ wins: 0, wins_femeninas: 0, rulawins: 0 })
+      .update({ wins: 0, wins_femeninas: 0, rulawins: 0, derrotas: 0, racha: 0, mejor_racha: 0 })
       .neq("wins", -1);
 
     if (error) {
@@ -457,54 +517,21 @@ client.on("messageCreate", async message => {
     message.channel.send("♻️ Rankings reseteados correctamente (General, Femenino y Ruleta).");
   }
 
-  // ===================== RANKING GENERAL =====================
+  // ===================== RANKING GENERAL (LINK A LA WEB) =====================
   if (command === "!rank") {
-    const { data: users, error } = await supabase
-      .from("registros-usuarios")
-      .select("*")
-      .order("wins", { ascending: false })
-      .limit(10);
-
-    if (error || !users || users.length === 0) {
-      return message.channel.send("📊 Aún no hay victorias registradas.");
-    }
-
-    const medals = ["🥇", "🥈", "🥉"];
-
-    const rankingText = users
-      .map((u, i) => {
-        const medal = medals[i] || "🏅";
-        return `${medal} #${i + 1} <@${u.discord_id}> • **${u.wins} wins**`;
-      })
-      .join("\n");
-
-    const topUser = users[0];
-
-    const { data: allUsers } = await supabase
-      .from("registros-usuarios")
-      .select("discord_id, wins")
-      .order("wins", { ascending: false });
-
-    const position = allUsers ? allUsers.findIndex(u => u.discord_id === message.author.id) + 1 : 0;
-    const userData = allUsers ? allUsers.find(u => u.discord_id === message.author.id) : null;
-
     const embed = new EmbedBuilder()
       .setColor(0xFFD700)
       .setTitle("🏆・RANKING VAGANCIA")
       .setDescription(
-        `👑 **TOP 1** ・ <@${topUser.discord_id}> (**${topUser.wins} wins**)\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `📊 **TOP 10**\n` +
-        `${rankingText}\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `🎯 **TU ESTADO**\n` +
-        `${userData && userData.wins > 0 ? `📍 Posición: **#${position}**\n💰 Wins: **${userData.wins}**` : "Aún no estás en el ranking"}`
+        `📊 **Acá estará todo el rank!**\n` +
+        `Wins, derrotas, winrate, rachas y más, todo en un solo lugar.\n\n` +
+        `🔗 **[Entrá a la web y mirá el ranking](${WEB_URL})**`
       )
       .setThumbnail("https://cdn-icons-png.flaticon.com/512/2583/2583344.png")
       .setFooter({ text: "⚔️ Vagancia Nube System" })
       .setTimestamp();
 
-    message.channel.send({ embeds: [embed] });
+    return message.channel.send({ embeds: [embed] });
   }
 
   // ===================== RANKING DIARIO (TABLA VITORIAS) =====================
@@ -683,13 +710,16 @@ client.on("messageCreate", async message => {
     try {
       const { data: allUsers, error: dbError } = await supabase
         .from("registros-usuarios")
-        .select("discord_id, wins")
+        .select("discord_id, wins, derrotas, racha, mejor_racha")
         .order("wins", { ascending: false });
 
       if (dbError) throw dbError;
 
       const userData = allUsers.find(u => u.discord_id === message.author.id);
       const userWins = userData ? userData.wins : 0;
+      const userDerrotas = userData ? (userData.derrotas || 0) : 0;
+      const userRacha = userData ? (userData.racha || 0) : 0;
+      const userMejorRacha = userData ? (userData.mejor_racha || 0) : 0;
 
       const position = allUsers.findIndex(u => u.discord_id === message.author.id) + 1;
       const globalRank = userWins > 0 ? `#${position}` : "Sin rank";
@@ -708,6 +738,9 @@ client.on("messageCreate", async message => {
           `<:usuario:1411828606312906772> **USUARIO:** <@${message.author.id}>\n\n` +
           `<:top_global:1493178367728685136> **TOP GLOBAL:** ${globalRank}\n\n` +
           `<:wins:1452217653350502462> **WINS:** ${userWins}\n\n` +
+          `💀 **DERROTAS:** ${userDerrotas}\n\n` +
+          `📈 **WINRATE:** ${calcWinrate(userWins, userDerrotas)}%\n\n` +
+          `🔥 **RACHA:** ${userRacha} (mejor: ${userMejorRacha})\n\n` +
           `───────────────────\n\n` +
           `😈 **Seguís subiendo en el ranking !**\n\n` +
           `───────────────────`
