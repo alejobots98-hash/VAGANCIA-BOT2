@@ -527,11 +527,13 @@ client.on("messageCreate", async message => {
         `Wins, derrotas, winrate, rachas y más, todo en un solo lugar.\n\n` +
         `🔗 **[Entrá a la web y mirá el ranking](${WEB_URL})**`
       )
-      .setThumbnail("https://cdn-icons-png.flaticon.com/512/2583/2583344.png")
+      .setThumbnail("attachment://vs.gif")
       .setFooter({ text: "⚔️ Vagancia Nube System" })
       .setTimestamp();
 
-    return message.channel.send({ embeds: [embed] });
+    const file = new AttachmentBuilder("./vs.gif");
+
+    return message.channel.send({ embeds: [embed], files: [file] });
   }
 
   // ===================== RANKING DIARIO (TABLA VITORIAS) =====================
